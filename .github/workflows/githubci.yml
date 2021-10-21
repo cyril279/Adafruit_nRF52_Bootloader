@@ -43,6 +43,7 @@ jobs:
           - 'nice_nano'
           - 'nrf52840_m2'
           - 'ohs2020_badge'
+          # - 'one42'
           - 'particle_argon'
           - 'particle_boron'
           - 'particle_xenon'
