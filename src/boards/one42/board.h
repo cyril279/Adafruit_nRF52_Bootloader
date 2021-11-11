@@ -56,8 +56,8 @@
 #define USB_DESC_CDC_ONLY_PID  0x00B3
 
 #define UF2_PRODUCT_NAME  "one42"
-#define UF2_VOLUME_LABEL  "ONE42"
+#define UF2_VOLUME_LABEL  "ONE42BOOT"
 #define UF2_BOARD_ID      "nRF52840-one42"
-#define UF2_INDEX_URL     "https://github.com/cyril279/keyboards"
+#define UF2_INDEX_URL     "https://github.com/cyril279/Adafruit_nRF52_Bootloader/tree/cyril/src/boards/one42"
 
 #endif // _ONE42_H
