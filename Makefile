@@ -7,6 +7,7 @@
 # - SD_HEX     : to bootloader hex binary
 #------------------------------------------------------------------------------
 
+# local customization
 -include Makefile.user
 
 SDK_PATH     = lib/sdk/components
@@ -15,14 +16,22 @@ TUSB_PATH    = lib/tinyusb/src
 NRFX_PATH    = lib/nrfx
 SD_PATH      = lib/softdevice/$(SD_FILENAME)
 
+# SD_VERSION can be overwritten by board.mk
+ifndef SD_VERSION
 SD_VERSION   = 6.1.1
+endif
+
 SD_FILENAME  = $(SD_NAME)_nrf52_$(SD_VERSION)
 SD_HEX       = $(SD_PATH)/$(SD_FILENAME)_softdevice.hex
 
 MBR_HEX			 = lib/softdevice/mbr/hex/mbr_nrf52_2.4.1_mbr.hex
 
 # linker by MCU eg. nrf52840.ld
-LD_FILE      = linker/$(MCU_SUB_VARIANT).ld
+ifeq ($(DEBUG), 1)
+  LD_FILE = linker/$(MCU_SUB_VARIANT)_debug.ld
+else
+  LD_FILE = linker/$(MCU_SUB_VARIANT).ld
+endif
 
 GIT_VERSION := $(shell git describe --dirty --always --tags)
 GIT_SUBMODULE_VERSIONS := $(shell git submodule status | cut -d" " -f3,4 | paste -s -d" " -)
@@ -34,7 +43,7 @@ OUT_NAME = $(BOARD)_bootloader-$(GIT_VERSION)
 MERGED_FILE = $(OUT_NAME)_$(SD_NAME)_$(SD_VERSION)
 
 #------------------------------------------------------------------------------
-# Tool configure
+# Tool Configure
 #------------------------------------------------------------------------------
 
 # Toolchain commands
@@ -104,17 +113,18 @@ ifeq ($(MCU_SUB_VARIANT),nrf52)
   SD_NAME = s132
   DFU_DEV_REV = 0xADAF
   CFLAGS += -DNRF52 -DNRF52832_XXAA -DS132
-  CFLAGS += -DDFU_APP_DATA_RESERVED=7*4096
+  DFU_APP_DATA_RESERVED=7*4096
 else ifeq ($(MCU_SUB_VARIANT),nrf52833)
   SD_NAME = s140
-  DFU_DEV_REV = 52840
+  DFU_DEV_REV = 52833
   CFLAGS += -DNRF52833_XXAA -DS140
-  CFLAGS += -DDFU_APP_DATA_RESERVED=7*4096
+  DFU_APP_DATA_RESERVED=7*4096
 else ifeq ($(MCU_SUB_VARIANT),nrf52840)
   SD_NAME = s140
   DFU_DEV_REV = 52840
   CFLAGS += -DNRF52840_XXAA -DS140
-  CFLAGS += -DDFU_APP_DATA_RESERVED=10*4096
+  # App reserved 40KB (8+32) to match circuitpython for 840
+  DFU_APP_DATA_RESERVED=10*4096
 else
   $(error Sub Variant $(MCU_SUB_VARIANT) is unknown)
 endif
@@ -129,6 +139,8 @@ C_SRC += \
   src/dfu_init.c \
   src/flash_nrf5x.c \
   src/main.c \
+  src/screen.c \
+  src/images.c \
 
 # all files in boards
 C_SRC += src/boards/boards.c
@@ -205,39 +217,46 @@ ASM_SRC = $(NRFX_PATH)/mdk/gcc_startup_$(MCU_SUB_VARIANT).S
 #------------------------------------------------------------------------------
 
 # src
-IPATH += src
-IPATH += src/boards
-IPATH += src/boards/$(BOARD)
-IPATH += src/cmsis/include
-IPATH += src/usb
-IPATH += $(TUSB_PATH)
+IPATH += \
+  src \
+  src/boards \
+  src/boards/$(BOARD) \
+  src/cmsis/include \
+  src/usb \
+  $(TUSB_PATH)
 
 # nrfx
-IPATH += $(NRFX_PATH)
-IPATH += $(NRFX_PATH)/mdk
-IPATH += $(NRFX_PATH)/hal
-IPATH += $(NRFX_PATH)/drivers/include
-IPATH += $(NRFX_PATH)/drivers/src
+IPATH += \
+  $(NRFX_PATH) \
+  $(NRFX_PATH)/mdk \
+  $(NRFX_PATH)/hal \
+  $(NRFX_PATH)/drivers/include \
+  $(NRFX_PATH)/drivers/src
 
-IPATH += $(SDK11_PATH)/libraries/bootloader_dfu/hci_transport
-IPATH += $(SDK11_PATH)/libraries/bootloader_dfu
-IPATH += $(SDK11_PATH)/drivers_nrf/pstorage
-IPATH += $(SDK11_PATH)/ble/common
-IPATH += $(SDK11_PATH)/ble/ble_services/ble_dfu
-IPATH += $(SDK11_PATH)/ble/ble_services/ble_dis
+# sdk11 for cdc/ble dfu
+IPATH += \
+  $(SDK11_PATH)/libraries/bootloader_dfu/hci_transport \
+  $(SDK11_PATH)/libraries/bootloader_dfu \
+  $(SDK11_PATH)/drivers_nrf/pstorage \
+  $(SDK11_PATH)/ble/common \
+  $(SDK11_PATH)/ble/ble_services/ble_dfu \
+  $(SDK11_PATH)/ble/ble_services/ble_dis
 
-IPATH += $(SDK_PATH)/libraries/timer
-IPATH += $(SDK_PATH)/libraries/scheduler
-IPATH += $(SDK_PATH)/libraries/crc16
-IPATH += $(SDK_PATH)/libraries/util
-IPATH += $(SDK_PATH)/libraries/hci/config
-IPATH += $(SDK_PATH)/libraries/uart
-IPATH += $(SDK_PATH)/libraries/hci
-IPATH += $(SDK_PATH)/drivers_nrf/delay
+# later sdk with updated drivers
+IPATH += \
+  $(SDK_PATH)/libraries/timer \
+  $(SDK_PATH)/libraries/scheduler \
+  $(SDK_PATH)/libraries/crc16 \
+  $(SDK_PATH)/libraries/util \
+  $(SDK_PATH)/libraries/hci/config \
+  $(SDK_PATH)/libraries/uart \
+  $(SDK_PATH)/libraries/hci \
+  $(SDK_PATH)/drivers_nrf/delay
 
-# Softdevice
-IPATH += $(SD_PATH)/$(SD_FILENAME)_API/include
-IPATH += $(SD_PATH)/$(SD_FILENAME)_API/include/nrf52
+# SoftDevice
+IPATH += \
+  $(SD_PATH)/$(SD_FILENAME)_API/include \
+  $(SD_PATH)/$(SD_FILENAME)_API/include/nrf52
 
 #------------------------------------------------------------------------------
 # Compiler Flags
@@ -250,6 +269,7 @@ CFLAGS += \
 	-mcpu=cortex-m4 \
 	-mfloat-abi=hard \
 	-mfpu=fpv4-sp-d16 \
+	-ggdb \
 	-Os \
 	-ffunction-sections \
 	-fdata-sections \
@@ -269,14 +289,10 @@ CFLAGS += \
 	-Wsign-compare \
 	-Wmissing-format-attribute \
 	-Wno-endif-labels \
-	-Wunreachable-code \
-	-ggdb
+	-Wunreachable-code
 
 # Suppress warning caused by SDK
 CFLAGS += -Wno-unused-parameter -Wno-expansion-to-defined
-
-# TinyUSB tusb_hal_nrf_power_event
-CFLAGS += -Wno-cast-function-type
 
 # Nordic Softdevice SDK header files contains inline assembler that has
 # broken constraints. As a result the IPA-modref pass, introduced in gcc-11,
@@ -300,6 +316,7 @@ ifneq ($(USE_NFCT),yes)
 endif
 
 CFLAGS += -DSOFTDEVICE_PRESENT
+CFLAGS += -DUF2_VERSION_BASE='"$(GIT_VERSION)"'
 CFLAGS += -DUF2_VERSION='"$(GIT_VERSION) $(GIT_SUBMODULE_VERSIONS)"'
 CFLAGS += -DBLEDIS_FW_VERSION='"$(GIT_VERSION) $(SD_NAME) $(SD_VERSION)"'
 
@@ -312,6 +329,22 @@ ifeq ($(DEBUG), 1)
   RTT_SRC = lib/SEGGER_RTT
   IPATH += $(RTT_SRC)/RTT
   C_SRC += $(RTT_SRC)/RTT/SEGGER_RTT.c
+  DFU_APP_DATA_RESERVED = 0
+
+	# expand bootloader address to 28KB/40KB of reserved app
+  ifeq ($(MCU_SUB_VARIANT),nrf52840)
+    CFLAGS += -DBOOTLOADER_REGION_START=0xEA000
+  else
+    CFLAGS += -DBOOTLOADER_REGION_START=0x6D000
+  endif
+endif
+
+CFLAGS += -DDFU_APP_DATA_RESERVED=$(DFU_APP_DATA_RESERVED)
+
+# https://gcc.gnu.org/bugzilla/show_bug.cgi?id=105523
+# Fixes for gcc version 12 and 13.
+ifneq (,$(filter 12.% 13.%,$(shell $(CC) -dumpversion 2>/dev/null)))
+	CFLAGS += --param=min-pagesize=0
 endif
 
 #------------------------------------------------------------------------------
@@ -321,6 +354,7 @@ endif
 LDFLAGS += \
 	$(CFLAGS) \
 	-Wl,-L,linker -Wl,-T,$(LD_FILE) \
+	-Wl,--print-memory-usage \
 	-Wl,-Map=$@.map -Wl,-cref -Wl,-gc-sections \
 	-specs=nosys.specs -specs=nano.specs
 
@@ -329,6 +363,7 @@ LIBS += -lm -lc
 #------------------------------------------------------------------------------
 # Assembler flags
 #------------------------------------------------------------------------------
+
 ASFLAGS += $(CFLAGS)
 
 #function for removing duplicates in a list
@@ -353,7 +388,7 @@ INC_PATHS = $(addprefix -I,$(IPATH))
 # BUILD TARGETS
 #------------------------------------------------------------------------------
 
-.PHONY: all clean flash dfu-flash sd gdbflash gdb
+.PHONY: all clean flash flash-dfu flash-sd flash-mbr dfu-flash sd mbr gdbflash gdb
 
 # default target to build
 all: $(BUILD)/$(OUT_NAME).out $(BUILD)/$(OUT_NAME)_nosd.hex $(BUILD)/update-$(OUT_NAME)_nosd.uf2 $(BUILD)/$(MERGED_FILE).hex $(BUILD)/$(MERGED_FILE).zip
@@ -428,7 +463,9 @@ copy-artifact: $(BIN)
 	@$(CP) $(BUILD)/$(MERGED_FILE).hex $(BIN)
 	@$(CP) $(BUILD)/$(MERGED_FILE).zip $(BIN)
 
-#------------------- Flash target -------------------
+#--------------------------------------
+# Flash Target
+#--------------------------------------
 
 check_defined = \
     $(strip $(foreach 1,$1, \
@@ -437,31 +474,39 @@ __check_defined = \
     $(if $(value $1),, \
     $(error Undefined make flag: $1$(if $2, ($2))))
 
+# erase chip
+erase:
+	@echo Erasing flash
+	$(call FLASH_ERASE_CMD)
+
 # Flash the compiled
 flash: $(BUILD)/$(OUT_NAME)_nosd.hex
 	@echo Flashing: $(notdir $<)
 	$(call FLASH_CMD,$<)
 
-erase:
-	@echo Erasing flash
-	$(call FLASH_ERASE_CMD)
-
 # flash SD only
-sd:
+sd: flash-sd
+flash-sd:
 	@echo Flashing: $(SD_HEX)
 	$(call FLASH_NOUICR_CMD,$(SD_HEX))
 
 # flash MBR only
-mbr:
+mbr: flash-mbr
+flash-mbr:
 	@echo Flashing: $(MBR_HEX)
 	$(call FLASH_NOUICR_CMD,$(MBR_HEX))
 
-#------------------- Flash with NRFUTIL via DFU -------------------
-
-# dfu using CDC interface
-dfu-flash: $(BUILD)/$(MERGED_FILE).zip
+# dfu with adafruit-nrfutil using CDC interface
+dfu-flash: flash-dfu
+flash-dfu: $(BUILD)/$(MERGED_FILE).zip
 	@:$(call check_defined, SERIAL, example: SERIAL=/dev/ttyACM0)
 	$(NRFUTIL) --verbose dfu serial --package $< -p $(SERIAL) -b 115200 --singlebank --touch 1200
+	
+# flash skip crc magic ( app valid = 0x0001, crc = 0x0000 )
+#flash-skip-crc:
+# nrfjprog --memwr $(BOOT_SETTING_ADDR) --val 0x00000001 -f nrf52
+#	nrfjprog --memwr 0xFF000 --val 0x00000001 -f nrf52
+#	nrfjprog --memwr 0x7F000 --val 0x00000001 -f nrf52
 
 #------------------- Debugging -------------------
 
